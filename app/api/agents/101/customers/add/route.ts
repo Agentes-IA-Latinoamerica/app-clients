@@ -1,17 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabaseClient'
+import { parse } from 'querystring'
 
 type CustomerPayload = {
-  phone_id : string
-  fullname : string
-  address : string
-  phone : string
+  phone_id: string
+  fullname: string
+  address: string
+  phone: string
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as CustomerPayload
+    const contentType = req.headers.get('content-type') || ''
+    let body: CustomerPayload | undefined
 
+    // Parsear según el tipo de contenido
+    if (contentType.includes('application/json')) {
+      body = (await req.json()) as CustomerPayload
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      const raw = await req.text()
+      body = parse(raw) as CustomerPayload
+    } else {
+      return NextResponse.json(
+        { success: false, message: 'Unsupported Content-Type' },
+        { status: 415 }
+      )
+    }
+
+    // Validar campos requeridos
     const requiredFields: (keyof CustomerPayload)[] = ['fullname', 'address', 'phone']
     const missingFields = requiredFields.filter(field => !body[field])
 
@@ -25,50 +41,43 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const {
-      phone_id,
-      fullname,
-      address,
-      phone
-    } = body
+    const { phone_id, fullname, address, phone } = body
 
-    // Verificar si ya existe el registro con ese phone_id
+    // Verificar si ya existe
     const { data: existing, error: selectError } = await supabase
       .from('customers_101')
-      .select('id, phone_id, fullname, address, phone') // Selecciona todos los campos necesarios
+      .select('id, phone_id, fullname, address, phone')
       .eq('phone_id', phone_id)
       .single()
 
     if (existing) {
+      // Actualizar
+      const { data: updated, error: updateError } = await supabase
+        .from('customers_101')
+        .update({ fullname, address, phone })
+        .eq('phone_id', phone_id)
+        .select()
+        .single()
 
-        // Actualizar el registro existente
-        const { data: updated, error: updateError } = await supabase
-          .from('customers_101')
-          .update({ fullname, address, phone })
-          .eq('phone_id', phone_id)
-          .select()
-          .single()
+      if (updateError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Error al actualizar',
+            error: updateError.message
+          },
+          { status: 500 }
+        )
+      }
 
-        if (updateError) {
-          return NextResponse.json(
-            {
-              success: false,
-              message: 'Error al actualizar',
-              error: updateError.message
-            },
-            { status: 500 }
-          )
-        }
-
-        return NextResponse.json({
-          success: true,
-          message: 'Datos actualizados correctamente',
-          data: updated
-        })
-
+      return NextResponse.json({
+        success: true,
+        message: 'Datos actualizados correctamente',
+        data: updated
+      })
     }
 
-    if (selectError && selectError.code !== 'PGRST116') { // PGRST116: No rows found
+    if (selectError && selectError.code !== 'PGRST116') {
       return NextResponse.json(
         {
           success: false,
@@ -79,16 +88,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Insertar nuevo
     const { data, error } = await supabase
       .from('customers_101')
-      .insert([
-        {
-          phone_id,
-          fullname,
-          address,
-          phone
-        }
-      ])
+      .insert([{ phone_id, fullname, address, phone }])
       .select()
       .single()
 
@@ -108,6 +111,7 @@ export async function POST(req: NextRequest) {
       message: 'Customer created successfully',
       orderId: data.id
     })
+
   } catch (e) {
     console.error('Server error:', e)
     return NextResponse.json(
