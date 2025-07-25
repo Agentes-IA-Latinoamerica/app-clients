@@ -21,11 +21,8 @@ export async function POST(req: NextRequest) {
     const missingFields = requiredFields.filter(field => !body[field])
 
     if (missingFields.length > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Missing required fields: ${missingFields.join(', ')}`
-        },
+      return new NextResponse(
+        `Faltan los siguientes campos obligatorios: ${missingFields.join(', ')}`,
         { status: 400 }
       )
     }
@@ -61,29 +58,20 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Database error',
-          error: error.message
-        },
+      return new NextResponse(
+        `Error al guardar el pedido en la base de datos: ${error.message}`,
         { status: 500 }
       )
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Order created successfully',
-      orderId: data.id
-    })
+    return new NextResponse(
+      `Pedido creado exitosamente. ID del pedido: ${data.id}`,
+      { status: 200 }
+    )
   } catch (e) {
     console.error('Server error:', e)
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Internal server error',
-        error: e instanceof Error ? e.message : 'Unknown error'
-      },
+    return new NextResponse(
+      `Error interno del servidor: ${e instanceof Error ? e.message : 'Error desconocido'}`,
       { status: 500 }
     )
   }

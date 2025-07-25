@@ -14,44 +14,38 @@ export async function POST(req: NextRequest) {
     const contentType = req.headers.get('content-type') || ''
     let body: CustomerPayload | undefined
 
-    // Parsear según el tipo de contenido
     if (contentType.includes('application/json')) {
       body = (await req.json()) as CustomerPayload
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const raw = await req.text()
-      body = parse(raw) as CustomerPayload
+      body = parse(raw) as unknown as CustomerPayload
     } else {
-      return NextResponse.json(
-        { success: false, message: 'Unsupported Content-Type' },
-        { status: 415 }
+      return new NextResponse(
+        'Tipo de contenido no soportado',
+        { status: 415, headers: { 'Content-Type': 'text/plain' } }
       )
     }
 
-    // Validar campos requeridos
     const requiredFields: (keyof CustomerPayload)[] = ['fullname', 'address', 'phone']
     const missingFields = requiredFields.filter(field => !body[field])
 
     if (missingFields.length > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Missing required fields: ${missingFields.join(', ')}`
-        },
-        { status: 400 }
+      return new NextResponse(
+        `Faltan los siguientes campos obligatorios: ${missingFields.join(', ')}`,
+        { status: 400, headers: { 'Content-Type': 'text/plain' } }
       )
     }
 
     const { phone_id, fullname, address, phone } = body
 
-    // Verificar si ya existe
+    // Buscar si ya existe
     const { data: existing, error: selectError } = await supabase
       .from('customers_101')
-      .select('id, phone_id, fullname, address, phone')
+      .select('id')
       .eq('phone_id', phone_id)
       .single()
 
     if (existing) {
-      // Actualizar
       const { data: updated, error: updateError } = await supabase
         .from('customers_101')
         .update({ fullname, address, phone })
@@ -60,35 +54,25 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (updateError) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Error al actualizar',
-            error: updateError.message
-          },
-          { status: 500 }
+        return new NextResponse(
+          `Error al actualizar datos: ${updateError.message}`,
+          { status: 500, headers: { 'Content-Type': 'text/plain' } }
         )
       }
 
-      return NextResponse.json({
-        success: true,
-        message: 'Datos actualizados correctamente',
-        data: updated
-      })
-    }
-
-    if (selectError && selectError.code !== 'PGRST116') {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Error al comprobar existencia',
-          error: selectError.message
-        },
-        { status: 500 }
+      return new NextResponse(
+        `Datos actualizados correctamente. ID: ${updated.id}`,
+        { status: 200, headers: { 'Content-Type': 'text/plain' } }
       )
     }
 
-    // Insertar nuevo
+    if (selectError && selectError.code !== 'PGRST116') {
+      return new NextResponse(
+        `Error al verificar existencia: ${selectError.message}`,
+        { status: 500, headers: { 'Content-Type': 'text/plain' } }
+      )
+    }
+
     const { data, error } = await supabase
       .from('customers_101')
       .insert([{ phone_id, fullname, address, phone }])
@@ -96,31 +80,22 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Database error',
-          error: error.message
-        },
-        { status: 500 }
+      return new NextResponse(
+        `Error al crear el cliente: ${error.message}`,
+        { status: 500, headers: { 'Content-Type': 'text/plain' } }
       )
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Customer created successfully',
-      orderId: data.id
-    })
+    return new NextResponse(
+      `Cliente creado correctamente. ID: ${data.id}`,
+      { status: 200, headers: { 'Content-Type': 'text/plain' } }
+    )
 
   } catch (e) {
     console.error('Server error:', e)
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Internal server error',
-        error: e instanceof Error ? e.message : 'Unknown error'
-      },
-      { status: 500 }
+    return new NextResponse(
+      `Error interno del servidor: ${e instanceof Error ? e.message : 'Error desconocido'}`,
+      { status: 500, headers: { 'Content-Type': 'text/plain' } }
     )
   }
 }
